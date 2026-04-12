@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  order-db:
+    image: postgres:16
+    container_name: order-db
+    environment:
+      POSTGRES_DB: orders_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5433:5432"]
+    volumes: [order_db_data:/var/lib/postgresql/data]
+
+  payment-db:
+    image: postgres:16
+    container_name: payment-db
+    environment:
+      POSTGRES_DB: payments_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5434:5432"]
+    volumes: [payment_db_data:/var/lib/postgresql/data]
+
+  payment-service:
+    build: { context: ./payment-service }
+    container_name: payment-service
+    depends_on: [payment-db]
+    environment:
+      APP_PORT: "8081"
+      DB_DSN: "postgres://postgres:postgres@payment-db:5432/payments_db?sslmode=disable"
+    ports: ["8081:8081"]
+
+  order-service:
+    build: { context: ./order-service }
+    container_name: order-service
+    depends_on: [order-db, payment-service]
+    environment:
+      APP_PORT: "8080"
+      DB_DSN: "postgres://postgres:postgres@order-db:5432/orders_db?sslmode=disable"
+      PAYMENT_BASE_URL: "http://payment-service:8081"
+    ports: ["8080:8080"]
+
+volumes:
+  order_db_data:
+  payment_db_data:

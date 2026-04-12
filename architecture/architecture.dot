@@ -1,0 +1,30 @@
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontname=Helvetica];
+  Client [label="Client / Postman / curl"];
+  subgraph cluster_order {
+    label="Order Service";
+    style=rounded;
+    OH [label="HTTP Handler"];
+    OU [label="Order Use Case"];
+    OR [label="Order Repository"];
+    ODB [label="Order DB", shape=cylinder];
+    OH -> OU;
+    OU -> OR;
+    OR -> ODB;
+  }
+  subgraph cluster_payment {
+    label="Payment Service";
+    style=rounded;
+    PH [label="HTTP Handler"];
+    PU [label="Payment Use Case"];
+    PR [label="Payment Repository"];
+    PDB [label="Payment DB", shape=cylinder];
+    PH -> PU;
+    PU -> PR;
+    PR -> PDB;
+  }
+  Client -> OH [label="POST /orders\nGET /orders/{id}\nPATCH /orders/{id}/cancel"];
+  OU -> PH [label="REST POST /payments\nhttp.Client timeout 2s"];
+  Client -> PH [label="GET /payments/{order_id}"];
+}

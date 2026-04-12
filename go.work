@@ -1,0 +1,8 @@
+go 1.26.1
+
+use (
+	./generated-contracts
+	./order-service
+	./payment-service
+	./tools/order-tracking-client
+)
