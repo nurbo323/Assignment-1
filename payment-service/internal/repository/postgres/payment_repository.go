@@ -31,3 +31,26 @@ func (r *PaymentRepository) GetByOrderID(ctx context.Context, orderID string) (d
 	}
 	return payment, nil
 }
+
+func (r *PaymentRepository) GetStats(ctx context.Context) (domain.PaymentStats, error) {
+	var stats domain.PaymentStats
+
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) AS total_count,
+			COALESCE(SUM(CASE WHEN status = 'Authorized' THEN 1 ELSE 0 END), 0) AS authorized_count,
+			COALESCE(SUM(CASE WHEN status = 'Declined' THEN 1 ELSE 0 END), 0) AS declined_count,
+			COALESCE(SUM(amount), 0) AS total_amount
+		FROM payments
+	`).Scan(
+		&stats.TotalCount,
+		&stats.AuthorizedCount,
+		&stats.DeclinedCount,
+		&stats.TotalAmount,
+	)
+	if err != nil {
+		return domain.PaymentStats{}, err
+	}
+
+	return stats, nil
+}

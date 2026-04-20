@@ -28,7 +28,7 @@ func main() {
 	handler := httptransport.NewPaymentHandler(uc)
 
 	go func() {
-		if err := grpctransport.RunGRPCServer(uc); err != nil {
+		if err := grpctransport.RunGRPCServer(uc, cfg.GRPCPort); err != nil {
 			log.Fatalf("grpc server error: %v", err)
 		}
 	}()

@@ -21,6 +21,8 @@ func NewServer(uc *usecase.PaymentUseCase) *Server {
 }
 
 func (s *Server) ProcessPayment(ctx context.Context, req *paymentpb.PaymentRequest) (*paymentpb.PaymentResponse, error) {
+	log.Printf("ProcessPayment called: order_id=%s amount=%d", req.OrderId, req.Amount)
+
 	payment, err := s.uc.CreatePayment(ctx, usecase.CreatePaymentInput{
 		OrderID: req.OrderId,
 		Amount:  req.Amount,
@@ -38,8 +40,22 @@ func (s *Server) ProcessPayment(ctx context.Context, req *paymentpb.PaymentReque
 	}, nil
 }
 
-func RunGRPCServer(uc *usecase.PaymentUseCase) error {
-	lis, err := net.Listen("tcp", ":50051")
+func (s *Server) GetPaymentStats(ctx context.Context, _ *paymentpb.GetPaymentStatsRequest) (*paymentpb.PaymentStats, error) {
+	stats, err := s.uc.GetStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &paymentpb.PaymentStats{
+		TotalCount:      stats.TotalCount,
+		AuthorizedCount: stats.AuthorizedCount,
+		DeclinedCount:   stats.DeclinedCount,
+		TotalAmount:     stats.TotalAmount,
+	}, nil
+}
+
+func RunGRPCServer(uc *usecase.PaymentUseCase, port string) error {
+	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		return err
 	}
@@ -47,6 +63,6 @@ func RunGRPCServer(uc *usecase.PaymentUseCase) error {
 	grpcServer := grpc.NewServer()
 	paymentpb.RegisterPaymentServiceServer(grpcServer, NewServer(uc))
 
-	log.Println("gRPC payment-service listening on :50051")
+	log.Printf("gRPC payment-service listening on :%s", port)
 	return grpcServer.Serve(lis)
 }

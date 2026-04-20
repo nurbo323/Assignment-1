@@ -41,3 +41,7 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, input CreatePaymentI
 func (u *PaymentUseCase) GetByOrderID(ctx context.Context, orderID string) (domain.Payment, error) {
 	return u.repo.GetByOrderID(ctx, orderID)
 }
+
+func (u *PaymentUseCase) GetStats(ctx context.Context) (domain.PaymentStats, error) {
+	return u.repo.GetStats(ctx)
+}
