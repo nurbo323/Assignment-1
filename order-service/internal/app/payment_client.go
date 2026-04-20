@@ -55,3 +55,20 @@ func (c *PaymentClient) Authorize(ctx context.Context, orderID string, amount in
 		TransactionID: res.TransactionId,
 	}, nil
 }
+
+func (c *PaymentClient) GetPaymentStats(ctx context.Context) (usecase.PaymentStats, error) {
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	res, err := c.client.GetPaymentStats(callCtx, &paymentpb.GetPaymentStatsRequest{})
+	if err != nil {
+		return usecase.PaymentStats{}, err
+	}
+
+	return usecase.PaymentStats{
+		TotalCount:      res.TotalCount,
+		AuthorizedCount: res.AuthorizedCount,
+		DeclinedCount:   res.DeclinedCount,
+		TotalAmount:     res.TotalAmount,
+	}, nil
+}
