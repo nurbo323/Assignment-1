@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   order-db:
     image: postgres:16
@@ -24,10 +22,11 @@ services:
   payment-service:
     build: { context: ./payment-service }
     container_name: payment-service
-    depends_on: [payment-db]
+    depends_on: [payment-db, rabbitmq]
     environment:
       APP_PORT: "8081"
       DB_DSN: "postgres://postgres:postgres@payment-db:5432/payments_db?sslmode=disable"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
     ports: ["8081:8081"]
 
   order-service:
@@ -39,6 +38,21 @@ services:
       DB_DSN: "postgres://postgres:postgres@order-db:5432/orders_db?sslmode=disable"
       PAYMENT_BASE_URL: "http://payment-service:8081"
     ports: ["8080:8080"]
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports: ["5672:5672", "15672:15672"]
+
+  notification-service:
+    build: { context: ./notification-service }
+    container_name: notification-service
+    depends_on: [rabbitmq]
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
 
 volumes:
   order_db_data:

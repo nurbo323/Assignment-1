@@ -11,14 +11,27 @@ flowchart LR
         PU[Payment Use Case]
         PR[Payment Repository]
         PDB[(Payment DB)]
+        Pub[RabbitMQ Publisher]
+    end
+    subgraph MQ[Message Broker]
+        Queue[(payment.completed<br/>Durable Queue)]
+    end
+    subgraph NS[Notification Service]
+        Consumer[RabbitMQ Consumer]
+        IdemCheck[Idempotency Check<br/>in-memory map]
+        Logger[Log Handler]
     end
 
     Client -->|POST /orders| OH
     OH --> OU
     OU --> OR --> ODB
-    OU -->|REST POST /payments\nhttp.Client timeout 2s| PH
-    PH --> PU --> PR --> PDB
-    PH --> OU
+    OU -->|gRPC ProcessPayment| PH
+    PH --> PU
+    PU --> PR --> PDB
+    PU -->|after DB commit| Pub
+    Pub -->|publish JSON event| Queue
+    Queue -->|consume message| Consumer
+    Consumer --> IdemCheck
+    IdemCheck -->|manual ACK| Consumer
+    IdemCheck -->|log notification| Logger
     Client -->|GET /orders/{id}| OH
-    Client -->|PATCH /orders/{id}/cancel| OH
-    Client -->|GET /payments/{order_id}| PH

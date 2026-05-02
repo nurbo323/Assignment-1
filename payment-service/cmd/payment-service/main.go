@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"payment-service/internal/app"
+	"payment-service/internal/messaging"
 	repopg "payment-service/internal/repository/postgres"
 	grpctransport "payment-service/internal/transport/grpc"
 	httptransport "payment-service/internal/transport/http"
@@ -24,7 +26,19 @@ func main() {
 	defer db.Close()
 
 	repo := repopg.NewPaymentRepository(db)
-	uc := usecase.NewPaymentUseCase(repo)
+
+	// initialize rabbitmq publisher
+	rabbitURL := "amqp://guest:guest@rabbitmq:5672/"
+	if v := os.Getenv("RABBITMQ_URL"); v != "" {
+		rabbitURL = v
+	}
+	pub, err := messaging.NewRabbitPublisher(rabbitURL, "payment.completed")
+	if err != nil {
+		log.Printf("failed to init rabbitmq publisher: %v", err)
+		pub = nil
+	}
+
+	uc := usecase.NewPaymentUseCase(repo, pub)
 	handler := httptransport.NewPaymentHandler(uc)
 
 	go func() {
