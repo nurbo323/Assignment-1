@@ -9,6 +9,16 @@ services:
     ports: ["5433:5432"]
     volumes: [order_db_data:/var/lib/postgresql/data]
 
+  order-migrations:
+    image: postgres:16
+    container_name: order-migrations
+    depends_on: [order-db]
+    volumes:
+      - ./order-service/migrations:/migrations:ro
+    entrypoint:
+      ["sh", "-c", "until pg_isready -h order-db -U postgres; do sleep 1; done; PGPASSWORD=postgres psql -h order-db -U postgres -d orders_db -f /migrations/001_init.sql"]
+    restart: "no"
+
   payment-db:
     image: postgres:16
     container_name: payment-db
@@ -19,12 +29,28 @@ services:
     ports: ["5434:5432"]
     volumes: [payment_db_data:/var/lib/postgresql/data]
 
+  payment-migrations:
+    image: postgres:16
+    container_name: payment-migrations
+    depends_on: [payment-db]
+    volumes:
+      - ./payment-service/migrations:/migrations:ro
+    entrypoint:
+      ["sh", "-c", "until pg_isready -h payment-db -U postgres; do sleep 1; done; PGPASSWORD=postgres psql -h payment-db -U postgres -d payments_db -f /migrations/001_init.sql"]
+    restart: "no"
+
   payment-service:
     build:
       context: .
       dockerfile: payment-service/Dockerfile
     container_name: payment-service
-    depends_on: [payment-db, rabbitmq]
+    depends_on:
+      payment-db:
+        condition: service_started
+      payment-migrations:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_started
     environment:
       APP_PORT: "8081"
       DB_DSN: "postgres://postgres:postgres@payment-db:5432/payments_db?sslmode=disable"
@@ -36,10 +62,17 @@ services:
       context: .
       dockerfile: order-service/Dockerfile
     container_name: order-service
-    depends_on: [order-db, payment-service]
+    depends_on:
+      order-db:
+        condition: service_started
+      order-migrations:
+        condition: service_completed_successfully
+      payment-service:
+        condition: service_started
     environment:
       APP_PORT: "8080"
       DB_DSN: "postgres://postgres:postgres@order-db:5432/orders_db?sslmode=disable"
+      PAYMENT_GRPC_ADDR: "payment-service:50051"
       PAYMENT_BASE_URL: "http://payment-service:8081"
     ports: ["8080:8080"]
 
@@ -56,7 +89,9 @@ services:
       context: .
       dockerfile: notification-service/Dockerfile
     container_name: notification-service
-    depends_on: [rabbitmq]
+    depends_on:
+      rabbitmq:
+        condition: service_started
     environment:
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
 

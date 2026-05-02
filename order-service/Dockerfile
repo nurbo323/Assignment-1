@@ -9,5 +9,6 @@ RUN go build -o /bin/order-service ./cmd/order-service
 FROM alpine:3.20
 WORKDIR /app
 COPY --from=builder /bin/order-service /app/order-service
+COPY order-service/migrations /migrations
 EXPOSE 8080
 CMD ["/app/order-service"]

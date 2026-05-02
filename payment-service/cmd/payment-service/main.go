@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"payment-service/internal/app"
@@ -24,6 +25,10 @@ func main() {
 		log.Fatalf("failed to connect to db: %v", err)
 	}
 	defer db.Close()
+
+	if err := runMigrations(ctx, db, "/migrations/001_init.sql"); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
 
 	repo := repopg.NewPaymentRepository(db)
 
@@ -57,4 +62,18 @@ func main() {
 	if err := router.Run(":" + cfg.AppPort); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func runMigrations(ctx context.Context, db *pgxpool.Pool, path string) error {
+	sqlBytes, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read migration %s: %w", path, err)
+	}
+
+	if _, err := db.Exec(ctx, string(sqlBytes)); err != nil {
+		return fmt.Errorf("exec migration %s: %w", path, err)
+	}
+
+	log.Printf("applied migration: %s", path)
+	return nil
 }

@@ -9,5 +9,6 @@ RUN go build -o /bin/payment-service ./cmd/payment-service
 FROM alpine:3.20
 WORKDIR /app
 COPY --from=builder /bin/payment-service /app/payment-service
+COPY payment-service/migrations /migrations
 EXPOSE 8081
 CMD ["/app/payment-service"]

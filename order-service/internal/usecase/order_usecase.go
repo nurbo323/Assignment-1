@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"log"
 	"order-service/internal/domain"
 	"time"
 
@@ -44,11 +45,13 @@ func (u *OrderUseCase) CreateOrder(ctx context.Context, input CreateOrderInput) 
 	}
 
 	if err := u.repo.Create(ctx, order); err != nil {
+		log.Printf("order create failed for customer=%s item=%s amount=%d: %v", input.CustomerID, input.ItemName, input.Amount, err)
 		return domain.Order{}, err
 	}
 
 	res, err := u.payment.Authorize(ctx, order.ID, order.Amount)
 	if err != nil {
+		log.Printf("payment authorization failed for order %s: %v", order.ID, err)
 		_ = u.repo.UpdateStatus(ctx, order.ID, "Failed")
 		if u.publisher != nil {
 			u.publisher.Publish(order.ID, "Failed")
