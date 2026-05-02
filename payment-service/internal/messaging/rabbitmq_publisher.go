@@ -44,7 +44,7 @@ func NewRabbitPublisher(url, queue string) (*RabbitPublisher, error) {
 	return &RabbitPublisher{conn: conn, channel: ch, queue: queue}, nil
 }
 
-func (r *RabbitPublisher) PublishPaymentCompleted(ctx context.Context, payload []byte) error {
+func (r *RabbitPublisher) PublishPaymentCompleted(ctx context.Context, messageID string, payload []byte) error {
 	// ensure publish happens with persistent delivery
 	err := r.channel.PublishWithContext(ctx,
 		"",      // default exchange
@@ -55,6 +55,7 @@ func (r *RabbitPublisher) PublishPaymentCompleted(ctx context.Context, payload [
 			ContentType:  "application/json",
 			Body:         payload,
 			DeliveryMode: amqp.Persistent,
+			MessageId:    messageID,
 			Timestamp:    time.Now(),
 		},
 	)

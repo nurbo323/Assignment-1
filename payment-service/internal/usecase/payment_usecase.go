@@ -9,7 +9,7 @@ import (
 )
 
 type EventPublisher interface {
-	PublishPaymentCompleted(ctx context.Context, payload []byte) error
+	PublishPaymentCompleted(ctx context.Context, messageID string, payload []byte) error
 }
 
 type PaymentUseCase struct {
@@ -56,7 +56,7 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, input CreatePaymentI
 			"payment_id":     payment.ID,
 		}
 		if b, err := json.Marshal(evt); err == nil {
-			_ = u.publisher.PublishPaymentCompleted(ctx, b)
+			_ = u.publisher.PublishPaymentCompleted(ctx, payment.ID, b)
 		}
 	}
 

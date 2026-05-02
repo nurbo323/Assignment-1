@@ -2,6 +2,7 @@ go 1.26.1
 
 use (
 	./generated-contracts
+	./notification-service
 	./order-service
 	./payment-service
 	./tools/order-tracking-client

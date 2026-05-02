@@ -32,10 +32,13 @@ func main() {
 	if v := os.Getenv("RABBITMQ_URL"); v != "" {
 		rabbitURL = v
 	}
-	pub, err := messaging.NewRabbitPublisher(rabbitURL, "payment.completed")
+	var pub usecase.EventPublisher
+	rpub, err := messaging.NewRabbitPublisher(rabbitURL, "payment.completed")
 	if err != nil {
 		log.Printf("failed to init rabbitmq publisher: %v", err)
 		pub = nil
+	} else {
+		pub = rpub
 	}
 
 	uc := usecase.NewPaymentUseCase(repo, pub)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
@@ -93,8 +94,34 @@ func main() {
 				continue
 			}
 
-			// simulate sending email by logging
-			log.Printf("[Notification] Sent email for message id=%s payload=%s", id, string(d.Body))
+			// parse payload and extract details for notification logging
+			var payload map[string]interface{}
+			err := json.Unmarshal(d.Body, &payload)
+			if err != nil {
+				// fallback if JSON parse fails
+				log.Printf("[Notification] Failed to parse message: %v", err)
+				_ = d.Ack(false)
+				continue
+			}
+
+			// extract fields from payload
+			customerEmail := "user@example.com"
+			if email, ok := payload["customer_email"].(string); ok && email != "" {
+				customerEmail = email
+			}
+
+			orderID := ""
+			if oid, ok := payload["order_id"].(string); ok {
+				orderID = oid
+			}
+
+			amount := int64(0)
+			if amt, ok := payload["amount"].(float64); ok {
+				amount = int64(amt)
+			}
+
+			// simulate sending email by logging with proper format
+			log.Printf("[Notification] Sent email to %s for Order #%s. Amount: $%d", customerEmail, orderID, amount)
 
 			// mark processed and ACK
 			mu.Lock()
