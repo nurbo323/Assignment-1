@@ -1,8 +1,9 @@
 FROM golang:1.24-alpine AS builder
-WORKDIR /app
-COPY go.mod ./
+WORKDIR /app/order-service
+COPY order-service/go.mod ./
+COPY generated-contracts ../generated-contracts
 RUN go mod download
-COPY . .
+COPY order-service . 
 RUN go build -o /bin/order-service ./cmd/order-service
 
 FROM alpine:3.20

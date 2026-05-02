@@ -20,7 +20,9 @@ services:
     volumes: [payment_db_data:/var/lib/postgresql/data]
 
   payment-service:
-    build: { context: ./payment-service }
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
     container_name: payment-service
     depends_on: [payment-db, rabbitmq]
     environment:
@@ -30,7 +32,9 @@ services:
     ports: ["8081:8081"]
 
   order-service:
-    build: { context: ./order-service }
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
     container_name: order-service
     depends_on: [order-db, payment-service]
     environment:
@@ -48,7 +52,9 @@ services:
     ports: ["5672:5672", "15672:15672"]
 
   notification-service:
-    build: { context: ./notification-service }
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
     container_name: notification-service
     depends_on: [rabbitmq]
     environment:

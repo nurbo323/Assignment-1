@@ -1,8 +1,9 @@
 FROM golang:1.24-alpine AS builder
-WORKDIR /app
-COPY go.mod ./
+WORKDIR /app/payment-service
+COPY payment-service/go.mod ./
+COPY generated-contracts ../generated-contracts
 RUN go mod download
-COPY . .
+COPY payment-service . 
 RUN go build -o /bin/payment-service ./cmd/payment-service
 
 FROM alpine:3.20
