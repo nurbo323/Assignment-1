@@ -1,6 +1,7 @@
 FROM golang:1.24-alpine AS builder
 WORKDIR /app/order-service
 COPY order-service/go.mod ./
+COPY order-service/go.sum ./
 COPY generated-contracts ../generated-contracts
 RUN go mod download
 COPY order-service . 

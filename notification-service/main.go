@@ -2,135 +2,47 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
-	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
+	"notification-service/internal/app"
+	"notification-service/internal/provider"
+	"notification-service/internal/state"
+	"notification-service/internal/worker"
+
 	amqp "github.com/rabbitmq/amqp091-go"
+	redislib "github.com/redis/go-redis/v9"
 )
 
 func main() {
-	rabbitURL := "amqp://guest:guest@rabbitmq:5672/"
-	if v := os.Getenv("RABBITMQ_URL"); v != "" {
-		rabbitURL = v
-	}
+	cfg := app.LoadConfig()
 
-	conn, err := amqp.Dial(rabbitURL)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	conn, err := amqp.Dial(cfg.RabbitURL)
 	if err != nil {
 		log.Fatalf("failed to connect rabbitmq: %v", err)
 	}
 	defer conn.Close()
 
-	ch, err := conn.Channel()
-	if err != nil {
-		log.Fatalf("failed to open channel: %v", err)
-	}
-	defer ch.Close()
+	redisClient := redislib.NewClient(&redislib.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	defer redisClient.Close()
 
-	qName := "payment.completed"
-	_, err = ch.QueueDeclare(
-		qName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
+	sender, err := provider.NewSender(cfg)
 	if err != nil {
-		log.Fatalf("failed to declare queue: %v", err)
+		log.Fatalf("failed to initialize notification provider: %v", err)
 	}
 
-	// QoS: process one message at a time
-	_ = ch.Qos(1, 0, false)
+	store := state.NewStore(redisClient, cfg.ProcessingLockTTL, cfg.SentTTL, cfg.FailedTTL)
+	worker := worker.New(conn, cfg.QueueName, store, sender, cfg.RetryMaxAttempts, cfg.RetryBaseDelay, cfg.RetryMaxDelay)
 
-	msgs, err := ch.Consume(
-		qName,
-		"",
-		false, // autoAck=false -> manual ACKs
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		log.Fatalf("failed to register consumer: %v", err)
-	}
-
-	processed := make(map[string]struct{})
-	var mu sync.Mutex
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	log.Println("notification-service: waiting for messages")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("notification-service: shutting down")
-			return
-		case d, ok := <-msgs:
-			if !ok {
-				log.Println("channel closed")
-				return
-			}
-
-			id := d.MessageId
-			if id == "" {
-				// fallback: use body hash
-				id = string(d.Body)
-			}
-
-			mu.Lock()
-			_, seen := processed[id]
-			mu.Unlock()
-
-			if seen {
-				// idempotency: ack and skip
-				_ = d.Ack(false)
-				continue
-			}
-
-			// parse payload and extract details for notification logging
-			var payload map[string]interface{}
-			err := json.Unmarshal(d.Body, &payload)
-			if err != nil {
-				// fallback if JSON parse fails
-				log.Printf("[Notification] Failed to parse message: %v", err)
-				_ = d.Ack(false)
-				continue
-			}
-
-			// extract fields from payload
-			customerEmail := "user@example.com"
-			if email, ok := payload["customer_email"].(string); ok && email != "" {
-				customerEmail = email
-			}
-
-			orderID := ""
-			if oid, ok := payload["order_id"].(string); ok {
-				orderID = oid
-			}
-
-			amount := int64(0)
-			if amt, ok := payload["amount"].(float64); ok {
-				amount = int64(amt)
-			}
-
-			// simulate sending email by logging with proper format
-			log.Printf("[Notification] Sent email to %s for Order #%s. Amount: $%d", customerEmail, orderID, amount)
-
-			// mark processed and ACK
-			mu.Lock()
-			processed[id] = struct{}{}
-			mu.Unlock()
-
-			if err := d.Ack(false); err != nil {
-				log.Printf("failed to ack message: %v", err)
-			}
-		}
+	if err := worker.Run(ctx); err != nil {
+		log.Fatalf("notification worker stopped: %v", err)
 	}
 }

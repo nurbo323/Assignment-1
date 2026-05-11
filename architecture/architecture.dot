@@ -8,10 +8,13 @@ digraph G {
     OH [label="HTTP Handler"];
     OU [label="Order Use Case"];
     OR [label="Order Repository"];
+    OC [label="Redis Cache"];
     ODB [label="Order DB", shape=cylinder];
     OH -> OU;
-    OU -> OR;
+    OU -> OC;
+    OC -> OR [label="cache miss"];
     OR -> ODB;
+    OR -> OC [label="refresh"];
   }
   subgraph cluster_payment {
     label="Payment Service";
@@ -20,11 +23,35 @@ digraph G {
     PU [label="Payment Use Case"];
     PR [label="Payment Repository"];
     PDB [label="Payment DB", shape=cylinder];
+    Pub [label="RabbitMQ Publisher"];
     PH -> PU;
     PU -> PR;
     PR -> PDB;
+    PU -> Pub;
   }
+  subgraph cluster_broker {
+    label="Message Broker";
+    style=rounded;
+    Queue [label="payment.completed\nDurable Queue", shape=box];
+  }
+  subgraph cluster_notification {
+    label="Notification Service";
+    style=rounded;
+    Consumer [label="RabbitMQ Consumer"];
+    Worker [label="Background Worker"];
+    Store [label="Redis Status Store"];
+    Provider [label="EmailSender / NotificationProvider"];
+  }
+  Redis [label="Redis", shape=cylinder];
   Client -> OH [label="POST /orders\nGET /orders/{id}\nPATCH /orders/{id}/cancel"];
   OU -> PH [label="REST POST /payments\nhttp.Client timeout 2s"];
+  Pub -> Queue [label="publish JSON event"];
+  Queue -> Consumer [label="consume"];
+  Consumer -> Worker;
+  Worker -> Store;
+  Store -> Redis;
+  Worker -> Provider;
+  Provider -> Worker [label="simulated/real SMTP"];
+  Worker -> Consumer [label="manual ACK after success"];
   Client -> PH [label="GET /payments/{order_id}"];
 }

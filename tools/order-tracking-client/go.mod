@@ -4,7 +4,10 @@ go 1.24.0
 
 replace github.com/nurbo323/generated-contracts => ../../generated-contracts
 
-require google.golang.org/grpc v1.80.0
+require (
+	github.com/nurbo323/generated-contracts v0.0.0-00010101000000-000000000000
+	google.golang.org/grpc v1.80.0
+)
 
 require (
 	golang.org/x/net v0.49.0 // indirect

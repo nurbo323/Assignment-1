@@ -14,6 +14,12 @@ type OrderRepository interface {
 	GetStats(ctx context.Context) (domain.OrderStats, error)
 }
 
+type OrderCache interface {
+	Get(ctx context.Context, id string) (domain.Order, bool, error)
+	Set(ctx context.Context, order domain.Order) error
+	Delete(ctx context.Context, id string) error
+}
+
 type PaymentAuthorizer interface {
 	Authorize(ctx context.Context, orderID string, amount int64) (PaymentAuthorizationResult, error)
 	GetPaymentStats(ctx context.Context) (PaymentStats, error)

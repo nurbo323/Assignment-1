@@ -12,6 +12,7 @@ import (
 
 type OrderUseCase struct {
 	repo      OrderRepository
+	cache     OrderCache
 	payment   PaymentAuthorizer
 	publisher OrderStatusPublisher
 }
@@ -22,9 +23,10 @@ type CreateOrderInput struct {
 	Amount     int64  `json:"amount"`
 }
 
-func NewOrderUseCase(repo OrderRepository, payment PaymentAuthorizer, publisher OrderStatusPublisher) *OrderUseCase {
+func NewOrderUseCase(repo OrderRepository, cache OrderCache, payment PaymentAuthorizer, publisher OrderStatusPublisher) *OrderUseCase {
 	return &OrderUseCase{
 		repo:      repo,
+		cache:     cache,
 		payment:   payment,
 		publisher: publisher,
 	}
@@ -57,6 +59,7 @@ func (u *OrderUseCase) CreateOrder(ctx context.Context, input CreateOrderInput) 
 			u.publisher.Publish(order.ID, "Failed")
 		}
 		order.Status = "Failed"
+		_ = u.syncCache(ctx, order)
 		return order, nil
 	}
 
@@ -73,12 +76,24 @@ func (u *OrderUseCase) CreateOrder(ctx context.Context, input CreateOrderInput) 
 		}
 		order.Status = "Declined"
 	}
+	_ = u.syncCache(ctx, order)
 
 	return order, nil
 }
 
 func (u *OrderUseCase) GetOrder(ctx context.Context, id string) (domain.Order, error) {
-	return u.repo.GetByID(ctx, id)
+	if u.cache != nil {
+		if cachedOrder, ok, err := u.cache.Get(ctx, id); err == nil && ok {
+			return cachedOrder, nil
+		}
+	}
+
+	order, err := u.repo.GetByID(ctx, id)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	_ = u.syncCache(ctx, order)
+	return order, nil
 }
 
 func (u *OrderUseCase) CancelOrder(ctx context.Context, id string) (domain.Order, error) {
@@ -100,6 +115,7 @@ func (u *OrderUseCase) CancelOrder(ctx context.Context, id string) (domain.Order
 	}
 
 	order.Status = "Cancelled"
+	_ = u.syncCache(ctx, order)
 	return order, nil
 }
 
@@ -109,4 +125,11 @@ func (u *OrderUseCase) GetStats(ctx context.Context) (domain.OrderStats, error) 
 
 func (u *OrderUseCase) GetPaymentStats(ctx context.Context) (PaymentStats, error) {
 	return u.payment.GetPaymentStats(ctx)
+}
+
+func (u *OrderUseCase) syncCache(ctx context.Context, order domain.Order) error {
+	if u.cache == nil {
+		return nil
+	}
+	return u.cache.Set(ctx, order)
 }

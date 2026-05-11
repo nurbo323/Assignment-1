@@ -21,6 +21,8 @@ Each service is split into these layers:
 - Payment Service has its own database and tables.
 - No service imports the other's entity/model package.
 - Order Service communicates with Payment Service only via REST.
+- Order Service uses Redis cache-aside for order reads and updates the cache when status changes.
+- Notification Service runs as a background worker with a provider abstraction and Redis-backed idempotency.
 
 ### Required business rules implemented
 - Money uses `int64`, never `float64`.
@@ -49,7 +51,7 @@ Bonus idempotency is included in the Order Service with the `Idempotency-Key` he
 ## 2. Architecture diagram
 ![Architecture Diagram](./architecture/architecture.png)
 
-Mermaid source is also included in `architecture/architecture.mmd`.
+Mermaid source is also included in [architecture/architecture.md](./architecture/architecture.md).
 
 ## 3. Project structure
 ```text
@@ -57,7 +59,7 @@ AP2_Assignment1_name_surname_group/
 ├── docker-compose.yml
 ├── README.md
 ├── architecture/
-│   ├── architecture.mmd
+│   ├── architecture.md
 │   └── architecture.png
 ├── order-service/
 │   ├── cmd/order-service/main.go
@@ -175,10 +177,21 @@ go run ./cmd/order-service
 - `APP_PORT` default: `8080`
 - `DB_DSN` default: `postgres://postgres:postgres@localhost:5433/orders_db?sslmode=disable`
 - `PAYMENT_BASE_URL` default: `http://localhost:8081`
+- `REDIS_ADDR` default: `localhost:6379`
+- `CACHE_TTL` default: `5m`
 
 ### Payment Service
 - `APP_PORT` default: `8081`
 - `DB_DSN` default: `postgres://postgres:postgres@localhost:5434/payments_db?sslmode=disable`
+
+### Notification Service
+- `RABBITMQ_URL` default: `amqp://guest:guest@rabbitmq:5672/`
+- `REDIS_ADDR` default: `localhost:6379`
+- `PROVIDER_MODE` default: `SIMULATED`
+- `RETRY_MAX_ATTEMPTS` default: `3`
+- `RETRY_BASE_DELAY` default: `2s`
+- `RETRY_MAX_DELAY` default: `8s`
+- `PROCESSING_LOCK_TTL` default: `30s`
 
 ## 8. Defense notes
 - handlers are thin

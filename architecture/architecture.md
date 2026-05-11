@@ -4,6 +4,7 @@ flowchart LR
         OH[HTTP Handler]
         OU[Order Use Case]
         OR[Order Repository]
+        OC[Redis Cache]
         ODB[(Order DB)]
     end
     subgraph PS[Payment Service]
@@ -18,20 +19,29 @@ flowchart LR
     end
     subgraph NS[Notification Service]
         Consumer[RabbitMQ Consumer]
-        IdemCheck[Idempotency Check<br/>in-memory map]
-        Logger[Log Handler]
+        Worker[Background Worker]
+        Store[Redis Status Store]
+        Provider[EmailSender / NotificationProvider]
     end
+    Redis[(Redis)]
 
     Client -->|POST /orders| OH
     OH --> OU
-    OU --> OR --> ODB
+    OU --> OC
+    OC -->|cache hit| OU
+    OU -->|cache miss| OR --> ODB
+    OR -->|fresh order| OU
+    OU -->|write-through / invalidate| OC
     OU -->|gRPC ProcessPayment| PH
     PH --> PU
     PU --> PR --> PDB
     PU -->|after DB commit| Pub
     Pub -->|publish JSON event| Queue
     Queue -->|consume message| Consumer
-    Consumer --> IdemCheck
-    IdemCheck -->|manual ACK| Consumer
-    IdemCheck -->|log notification| Logger
+    Consumer --> Worker
+    Worker --> Store --> Redis
+    Worker --> Provider
+    Provider -->|simulated SMTP or real SMTP| Worker
+    Worker -->|retry with exponential backoff| Provider
+    Worker -->|manual ACK after success| Consumer
     Client -->|GET /orders/{id}| OH

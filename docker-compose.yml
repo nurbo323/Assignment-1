@@ -1,4 +1,10 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports: ["6379:6379"]
+    volumes: [redis_data:/data]
+
   order-db:
     image: postgres:16
     container_name: order-db
@@ -67,6 +73,8 @@ services:
         condition: service_started
       order-migrations:
         condition: service_completed_successfully
+      redis:
+        condition: service_started
       payment-service:
         condition: service_started
     environment:
@@ -74,6 +82,8 @@ services:
       DB_DSN: "postgres://postgres:postgres@order-db:5432/orders_db?sslmode=disable"
       PAYMENT_GRPC_ADDR: "payment-service:50051"
       PAYMENT_BASE_URL: "http://payment-service:8081"
+      REDIS_ADDR: "redis:6379"
+      CACHE_TTL: "5m"
     ports: ["8080:8080"]
 
   rabbitmq:
@@ -90,11 +100,20 @@ services:
       dockerfile: notification-service/Dockerfile
     container_name: notification-service
     depends_on:
+      redis:
+        condition: service_started
       rabbitmq:
         condition: service_started
     environment:
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      REDIS_ADDR: "redis:6379"
+      PROVIDER_MODE: "SIMULATED"
+      RETRY_MAX_ATTEMPTS: "3"
+      RETRY_BASE_DELAY: "2s"
+      RETRY_MAX_DELAY: "8s"
+      PROCESSING_LOCK_TTL: "30s"
 
 volumes:
+  redis_data:
   order_db_data:
   payment_db_data:
