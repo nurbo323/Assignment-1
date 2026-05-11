@@ -1,220 +1,224 @@
-# AP2 Assignment 1 - Clean Architecture based Microservices (Order & Payment)
+# AP2 Assignment 1 / 4 - Clean Architecture Microservices
 
-This solution implements the assignment as two separate Go microservices:
-1. Order Service - owns order lifecycle and order state.
-2. Payment Service - owns payment authorization and transaction records.
+This repository contains a complete Go microservices solution with three processes:
 
-The implementation follows the assignment requirements from the PDF: Clean Architecture, REST-only communication through Gin, database per service, no shared entities/models, manual DI in `main.go`, and a custom HTTP client timeout of 2 seconds max for the Order -> Payment call.
+- **Order Service** — manages orders, caching, and order lifecycle
+- **Payment Service** — handles payment authorization and payment records
+- **Notification Service** — consumes payment events and sends notifications
 
-## 1. How the solution maps to the assignment
+The project follows Clean Architecture, separates persistence per service, avoids shared domain models, and uses Docker Compose for local orchestration.
 
-### Clean Architecture inside each service
-Each service is split into these layers:
-- `internal/domain` - pure entities and domain errors/constants
-- `internal/usecase` - business rules and application logic
-- `internal/repository` - PostgreSQL persistence
-- `internal/transport/http` - thin Gin handlers
-- `cmd/<service-name>/main.go` - composition root / manual dependency injection
+## Highlights
 
-### Microservice decomposition
-- Order Service has its own database and tables.
-- Payment Service has its own database and tables.
-- No service imports the other's entity/model package.
-- Order Service communicates with Payment Service only via REST.
-- Order Service uses Redis cache-aside for order reads and updates the cache when status changes.
-- Notification Service runs as a background worker with a provider abstraction and Redis-backed idempotency.
+- **Clean Architecture:** thin HTTP handlers, application use cases, repositories, and pure domain logic
+- **Service boundaries:** each service owns its own database and responsibilities
+- **Order caching:** Redis cache-aside for fast order reads
+- **Event-driven notifications:** RabbitMQ queue `payment.completed` drives the notification worker
+- **Idempotency:** order submission supports `Idempotency-Key`, and notification processing is guarded by Redis locks
+- **Local development:** one command starts the full stack with Docker Compose
 
-### Required business rules implemented
-- Money uses `int64`, never `float64`.
-- Order amount must be `> 0`.
-- `Paid` orders cannot be cancelled.
-- Payment amount over `100000` is declined.
-- Order Service uses custom `http.Client{Timeout: 2 * time.Second}`.
+## Architecture
 
-### Failure-handling decision
-If the Payment Service is unavailable:
-- Order Service does not hang because it uses timeout.
-- Order Service marks the order as Failed.
-- Order Service returns 503 Service Unavailable.
-
-I chose Failed instead of leaving the order Pending because:
-- the request to create the order has already completed from the client's point of view,
-- payment authorization did not succeed,
-- the final state is easier to explain during defense,
-- it avoids stuck pending orders.
-
-### Bonus: simple idempotency
-Bonus idempotency is included in the Order Service with the `Idempotency-Key` header.
-- Same key + same request payload returns the already created order instead of creating duplicates.
-- Payment Service also protects against duplicate payment records with a unique `order_id`.
-
-## 2. Architecture diagram
 ![Architecture Diagram](./architecture/architecture.png)
 
-Mermaid source is also included in [architecture/architecture.md](./architecture/architecture.md).
+The source diagram is also available in [architecture/architecture.md](./architecture/architecture.md) and [architecture/architecture.dot](./architecture/architecture.dot).
 
-## 3. Project structure
+## Repository layout
+
 ```text
-AP2_Assignment1_name_surname_group/
+.
 ├── docker-compose.yml
 ├── README.md
 ├── architecture/
 │   ├── architecture.md
+│   ├── architecture.dot
 │   └── architecture.png
 ├── order-service/
-│   ├── cmd/order-service/main.go
-│   ├── internal/
-│   │   ├── app/
-│   │   ├── domain/
-│   │   ├── repository/
-│   │   ├── transport/http/
-│   │   └── usecase/
-│   ├── migrations/
-│   ├── Dockerfile
-│   └── go.mod
-└── payment-service/
-    ├── cmd/payment-service/main.go
-    ├── internal/
-    │   ├── app/
-    │   ├── domain/
-    │   ├── repository/
-    │   ├── transport/http/
-    │   └── usecase/
-    ├── migrations/
-    ├── Dockerfile
-    └── go.mod
+├── payment-service/
+├── notification-service/
+├── generated-contracts/
+├── proto-repository/
+└── tools/
 ```
 
-## 4. Bounded contexts
+## Service responsibilities
 
-### Order bounded context
+### Order Service
+
 Owns:
-- order creation
+
+- create order
+- read order
+- cancel order
 - order status transitions
-- cancellation policy
-- idempotency for order submission
+- cache maintenance in Redis
 
 Does not own:
-- payment authorization decision logic
-- transaction storage
 
-### Payment bounded context
+- payment authorization rules
+- payment persistence
+
+### Payment Service
+
 Owns:
-- payment authorization
-- payment status
-- transaction ID generation
-- payment transaction persistence
-- amount limit validation
+
+- process payment
+- persist payment result
+- generate transaction metadata
+- reject payments above the configured threshold
 
 Does not own:
-- order lifecycle rules beyond `order_id` reference
 
-## 5. API examples
+- order lifecycle decisions
+
+### Notification Service
+
+Owns:
+
+- consume `payment.completed` events
+- avoid duplicate notification delivery
+- simulate or send real email notifications
+- retry failed delivery with exponential backoff
+
+## Business rules
+
+- Monetary values use `int64`
+- Order amount must be greater than zero
+- `Paid` orders cannot be cancelled
+- Payments above `100000` are declined
+- Order Service uses an HTTP timeout of `2s` for the payment call
+
+## How the system works
+
+1. Client creates an order via `POST /orders`
+2. Order Service stores the order and calls Payment Service
+3. Payment Service creates a payment and publishes `payment.completed` to RabbitMQ
+4. Notification Service consumes the message
+5. Notification Service sends a notification and stores the result in Redis
+
+## Run locally
+
+### Start everything
+
+```bash
+docker compose up --build -d
+```
+
+### Check running containers
+
+```bash
+docker compose ps
+```
+
+### Watch logs
+
+```bash
+docker compose logs -f order-service payment-service notification-service rabbitmq redis
+```
+
+## API examples
 
 ### Create order
+
 ```bash
-curl -i -X POST http://localhost:8080/orders   -H "Content-Type: application/json"   -H "Idempotency-Key: demo-key-1"   -d '{"customer_id":"cust-1","item_name":"Keyboard","amount":15000}'
+curl -i -X POST http://localhost:8080/orders \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: demo-key-1" \
+    -d '{"customer_id":"cust-1","item_name":"Keyboard","amount":15000}'
 ```
 
 ### Get order
+
 ```bash
 curl http://localhost:8080/orders/<order_id>
 ```
 
 ### Cancel order
+
 ```bash
 curl -X PATCH http://localhost:8080/orders/<order_id>/cancel
 ```
 
-### Create payment directly
+### Order stats
+
 ```bash
-curl -i -X POST http://localhost:8081/payments   -H "Content-Type: application/json"   -d '{"order_id":"order-1","amount":15000}'
+curl http://localhost:8080/order/stats
+```
+
+### Create payment directly
+
+```bash
+curl -i -X POST http://localhost:8081/payments \
+    -H "Content-Type: application/json" \
+    -d '{"order_id":"<order_id>","amount":15000}'
 ```
 
 ### Get payment by order id
+
 ```bash
-curl http://localhost:8081/payments/order-1
+curl http://localhost:8081/payments/<order_id>
 ```
 
-## 6. How to run locally
+### Payment stats
 
-### Option A - with Docker Compose
-From the root folder:
 ```bash
-docker compose up --build
+curl -s http://localhost:8081/payments/stats
 ```
 
-Then apply SQL migrations manually:
+## gRPC verification
 
-**Order DB**
+Payment Service also exposes gRPC internally on `:50051`.
+
+If you want to test it from the host, expose the port in `docker-compose.yml` or run the request from a container in the same Docker network.
+
+Example with `grpcurl`:
+
 ```bash
-psql "postgres://postgres:postgres@localhost:5433/orders_db?sslmode=disable" -f order-service/migrations/001_init.sql
+grpcurl -plaintext -d '{"order_id":"<order_id>","amount":15000}' localhost:50051 payment.v1.PaymentService/ProcessPayment
+grpcurl -plaintext -d '{}' localhost:50051 payment.v1.PaymentService/GetPaymentStats
 ```
 
-**Payment DB**
-```bash
-psql "postgres://postgres:postgres@localhost:5434/payments_db?sslmode=disable" -f payment-service/migrations/001_init.sql
-```
-
-### Option B - run each service manually
-Start two PostgreSQL databases, apply migrations, then:
-
-**Payment Service**
-```bash
-cd payment-service
-go run ./cmd/payment-service
-```
-
-**Order Service**
-```bash
-cd order-service
-go run ./cmd/order-service
-```
-
-## 7. Environment variables
+## Environment variables
 
 ### Order Service
-- `APP_PORT` default: `8080`
-- `DB_DSN` default: `postgres://postgres:postgres@localhost:5433/orders_db?sslmode=disable`
-- `PAYMENT_BASE_URL` default: `http://localhost:8081`
-- `REDIS_ADDR` default: `localhost:6379`
-- `CACHE_TTL` default: `5m`
+
+- `APP_PORT` — default `8080`
+- `DB_DSN` — default `postgres://postgres:postgres@localhost:5433/orders_db?sslmode=disable`
+- `PAYMENT_BASE_URL` — default `http://localhost:8081`
+- `REDIS_ADDR` — default `localhost:6379`
+- `CACHE_TTL` — default `5m`
 
 ### Payment Service
-- `APP_PORT` default: `8081`
-- `DB_DSN` default: `postgres://postgres:postgres@localhost:5434/payments_db?sslmode=disable`
+
+- `APP_PORT` — default `8081`
+- `DB_DSN` — default `postgres://postgres:postgres@localhost:5434/payments_db?sslmode=disable`
+- `RABBITMQ_URL` — default `amqp://guest:guest@rabbitmq:5672/`
 
 ### Notification Service
-- `RABBITMQ_URL` default: `amqp://guest:guest@rabbitmq:5672/`
-- `REDIS_ADDR` default: `localhost:6379`
-- `PROVIDER_MODE` default: `SIMULATED`
-- `RETRY_MAX_ATTEMPTS` default: `3`
-- `RETRY_BASE_DELAY` default: `2s`
-- `RETRY_MAX_DELAY` default: `8s`
-- `PROCESSING_LOCK_TTL` default: `30s`
 
-## 8. Defense notes
-- handlers are thin
-- use cases depend on interfaces
-- repositories implement those interfaces
-- domain has no dependency on Gin or SQL
-- wiring is done in `main.go`
-- different processes, different DBs, no shared models, REST only
+- `RABBITMQ_URL` — default `amqp://guest:guest@rabbitmq:5672/`
+- `REDIS_ADDR` — default `localhost:6379`
+- `PROVIDER_MODE` — default `SIMULATED`
+- `RETRY_MAX_ATTEMPTS` — default `3`
+- `RETRY_BASE_DELAY` — default `2s`
+- `RETRY_MAX_DELAY` — default `8s`
+- `PROCESSING_LOCK_TTL` — default `30s`
 
-### Failure scenario
-If Payment Service is down:
-1. Order is inserted as `Pending`
-2. Order Service tries `POST /payments`
-3. HTTP client times out within 2 seconds
-4. Order status is updated to `Failed`
-5. API returns `503`
+## Verification checklist
 
-### Cancellation rule
-Only `Pending` orders can be cancelled.
+- `docker compose ps` shows all services as `Up`
+- `payment.completed` queue has `1` consumer
+- `messages_ready = 0` and `messages_unacknowledged = 0`
+- `notification-service` logs show worker startup and message handling
+- Creating an order returns `201 Created`
+- Payment lookup by `order_id` returns the created payment
 
-## 9. Submission
-Zip this folder as:
+## Submission
+
+Recommended archive name:
+
 ```text
 AP2_Assignment1_name_surname_group.zip
 ```
-Then upload it to Moodle.
+
+Upload the zip to Moodle after committing your changes to git.

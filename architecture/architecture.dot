@@ -1,57 +1,77 @@
 digraph G {
   rankdir=LR;
-  node [shape=box, style=rounded, fontname=Helvetica];
-  Client [label="Client / Postman / curl"];
+  splines=ortho;
+  bgcolor="white";
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fillcolor="white", fontname="Helvetica", color="#374151"];
+  edge [fontname="Helvetica", color="#4b5563", arrowsize=0.8];
+
+  Client [label="Client / Postman / curl", fillcolor="#f8fafc"];
+
   subgraph cluster_order {
     label="Order Service";
-    style=rounded;
+    style="rounded,filled";
+    color="#dbeafe";
+    fillcolor="#eff6ff";
     OH [label="HTTP Handler"];
     OU [label="Order Use Case"];
-    OR [label="Order Repository"];
-    OC [label="Redis Cache"];
-    ODB [label="Order DB", shape=cylinder];
+    OR [label="PostgreSQL Repository"];
+    OC [label="Redis Cache", shape=cylinder, fillcolor="#ecfeff"];
+    ODB [label="Order DB", shape=cylinder, fillcolor="#f1f5f9"];
     OH -> OU;
-    OU -> OC;
-    OC -> OR [label="cache miss"];
+    OU -> OC [label="cache lookup"];
+    OU -> OR [label="cache miss"];
     OR -> ODB;
     OR -> OC [label="refresh"];
   }
+
   subgraph cluster_payment {
     label="Payment Service";
-    style=rounded;
+    style="rounded,filled";
+    color="#dcfce7";
+    fillcolor="#f0fdf4";
     PH [label="HTTP Handler"];
     PU [label="Payment Use Case"];
-    PR [label="Payment Repository"];
-    PDB [label="Payment DB", shape=cylinder];
+    PR [label="PostgreSQL Repository"];
+    PDB [label="Payment DB", shape=cylinder, fillcolor="#f1f5f9"];
     Pub [label="RabbitMQ Publisher"];
     PH -> PU;
     PU -> PR;
     PR -> PDB;
     PU -> Pub;
   }
+
   subgraph cluster_broker {
     label="Message Broker";
-    style=rounded;
-    Queue [label="payment.completed\nDurable Queue", shape=box];
+    style="rounded,filled";
+    color="#fef3c7";
+    fillcolor="#fffbeb";
+    Queue [label="payment.completed\nDurable Queue", fillcolor="#ffffff"];
   }
+
   subgraph cluster_notification {
     label="Notification Service";
-    style=rounded;
+    style="rounded,filled";
+    color="#ede9fe";
+    fillcolor="#f5f3ff";
     Consumer [label="RabbitMQ Consumer"];
     Worker [label="Background Worker"];
-    Store [label="Redis Status Store"];
-    Provider [label="EmailSender / NotificationProvider"];
+    Store [label="Redis Status Store", shape=cylinder, fillcolor="#ecfeff"];
+    Provider [label="Notification Provider"];
   }
-  Redis [label="Redis", shape=cylinder];
+
+  Redis [label="Redis", shape=cylinder, fillcolor="#ecfeff"];
+
   Client -> OH [label="POST /orders\nGET /orders/{id}\nPATCH /orders/{id}/cancel"];
-  OU -> PH [label="REST POST /payments\nhttp.Client timeout 2s"];
+  Client -> PH [label="GET /payments/{order_id}\nPOST /payments"];
+  OU -> PH [label="gRPC / internal payment call\n2s timeout"];
   Pub -> Queue [label="publish JSON event"];
   Queue -> Consumer [label="consume"];
   Consumer -> Worker;
-  Worker -> Store;
+  Worker -> Store [label="idempotency / lock"];
   Store -> Redis;
   Worker -> Provider;
-  Provider -> Worker [label="simulated/real SMTP"];
-  Worker -> Consumer [label="manual ACK after success"];
-  Client -> PH [label="GET /payments/{order_id}"];
+  Provider -> Worker [label="SIMULATED or SMTP"];
+  Worker -> Consumer [label="Ack after success"];
 }
