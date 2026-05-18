@@ -21,6 +21,7 @@ type Config struct {
 	RetryMaxAttempts     int
 	RetryBaseDelay       time.Duration
 	RetryMaxDelay        time.Duration
+	WorkerConcurrency    int
 	SimulatedLatency     time.Duration
 	SimulatedFailureRate float64
 	SMTPHost             string
@@ -43,11 +44,12 @@ func LoadConfig() Config {
 		ProcessingLockTTL:    envDuration("PROCESSING_LOCK_TTL", 30*time.Second),
 		SentTTL:              envDuration("NOTIFICATION_SENT_TTL", 24*time.Hour),
 		FailedTTL:            envDuration("NOTIFICATION_FAILED_TTL", 1*time.Hour),
-		RetryMaxAttempts:     envInt("RETRY_MAX_ATTEMPTS", 3),
+		RetryMaxAttempts:     envInt("RETRY_MAX_ATTEMPTS", 5),
 		RetryBaseDelay:       envDuration("RETRY_BASE_DELAY", 2*time.Second),
 		RetryMaxDelay:        envDuration("RETRY_MAX_DELAY", 8*time.Second),
+		WorkerConcurrency:    envInt("WORKER_CONCURRENCY", 5),
 		SimulatedLatency:     envDuration("SIMULATED_LATENCY", 500*time.Millisecond),
-		SimulatedFailureRate: envFloat("SIMULATED_FAILURE_RATE", 0.2),
+		SimulatedFailureRate: envFloat("SIMULATED_FAILURE_RATE", 0.8),
 		SMTPHost:             os.Getenv("SMTP_HOST"),
 		SMTPPort:             envString("SMTP_PORT", "587"),
 		SMTPUsername:         os.Getenv("SMTP_USERNAME"),

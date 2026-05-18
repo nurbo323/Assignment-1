@@ -199,9 +199,11 @@ grpcurl -plaintext -d '{}' localhost:50051 payment.v1.PaymentService/GetPaymentS
 - `RABBITMQ_URL` — default `amqp://guest:guest@rabbitmq:5672/`
 - `REDIS_ADDR` — default `localhost:6379`
 - `PROVIDER_MODE` — default `SIMULATED`
-- `RETRY_MAX_ATTEMPTS` — default `3`
+- `RETRY_MAX_ATTEMPTS` — default `5`
 - `RETRY_BASE_DELAY` — default `2s`
 - `RETRY_MAX_DELAY` — default `8s`
+- `WORKER_CONCURRENCY` — default `5`
+- `SIMULATED_FAILURE_RATE` — default `0.8`
 - `PROCESSING_LOCK_TTL` — default `30s`
 
 ## Verification checklist

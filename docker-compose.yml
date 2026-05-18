@@ -108,9 +108,11 @@ services:
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
       REDIS_ADDR: "redis:6379"
       PROVIDER_MODE: "SIMULATED"
-      RETRY_MAX_ATTEMPTS: "3"
+      RETRY_MAX_ATTEMPTS: "5"
       RETRY_BASE_DELAY: "2s"
       RETRY_MAX_DELAY: "8s"
+      WORKER_CONCURRENCY: "5"
+      SIMULATED_FAILURE_RATE: "0.8"
       PROCESSING_LOCK_TTL: "30s"
 
 volumes:

@@ -8,30 +8,37 @@ import (
 	"math"
 	"notification-service/internal/provider"
 	"notification-service/internal/state"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Worker struct {
-	conn      *amqp.Connection
-	queueName string
-	store     *state.Store
-	sender    provider.Sender
-	retries   int
-	baseDelay time.Duration
-	maxDelay  time.Duration
+	conn        *amqp.Connection
+	queueName   string
+	store       *state.Store
+	sender      provider.Sender
+	retries     int
+	baseDelay   time.Duration
+	maxDelay    time.Duration
+	concurrency int
+	ackMu       sync.Mutex
 }
 
-func New(conn *amqp.Connection, queueName string, store *state.Store, sender provider.Sender, retries int, baseDelay, maxDelay time.Duration) *Worker {
+func New(conn *amqp.Connection, queueName string, store *state.Store, sender provider.Sender, retries int, baseDelay, maxDelay time.Duration, concurrency int) *Worker {
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 	return &Worker{
-		conn:      conn,
-		queueName: queueName,
-		store:     store,
-		sender:    sender,
-		retries:   retries,
-		baseDelay: baseDelay,
-		maxDelay:  maxDelay,
+		conn:        conn,
+		queueName:   queueName,
+		store:       store,
+		sender:      sender,
+		retries:     retries,
+		baseDelay:   baseDelay,
+		maxDelay:    maxDelay,
+		concurrency: concurrency,
 	}
 }
 
@@ -54,7 +61,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := ch.Qos(1, 0, false); err != nil {
+	if err := ch.Qos(w.concurrency, 0, false); err != nil {
 		return err
 	}
 
@@ -65,17 +72,28 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	log.Printf("notification-service worker listening on queue=%s", w.queueName)
 
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, w.concurrency)
+
 	for {
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return nil
 		case msg, ok := <-msgs:
 			if !ok {
+				wg.Wait()
 				return nil
 			}
-			if err := w.handleDelivery(ctx, msg); err != nil {
-				log.Printf("notification delivery failed: %v", err)
-			}
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(delivery amqp.Delivery) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if err := w.handleDelivery(ctx, delivery); err != nil {
+					log.Printf("notification delivery failed: %v", err)
+				}
+			}(msg)
 		}
 	}
 }
@@ -83,7 +101,7 @@ func (w *Worker) Run(ctx context.Context) error {
 func (w *Worker) handleDelivery(ctx context.Context, msg amqp.Delivery) error {
 	var payload eventPayload
 	if err := json.Unmarshal(msg.Body, &payload); err != nil {
-		_ = msg.Ack(false)
+		_ = w.ack(msg)
 		return fmt.Errorf("decode event: %w", err)
 	}
 
@@ -102,7 +120,7 @@ func (w *Worker) handleDelivery(ctx context.Context, msg amqp.Delivery) error {
 		return err
 	}
 	if found && status == "sent" {
-		return msg.Ack(false)
+		return w.ack(msg)
 	}
 
 	locked, err := w.store.TryLock(ctx, payload.PaymentID)
@@ -110,7 +128,7 @@ func (w *Worker) handleDelivery(ctx context.Context, msg amqp.Delivery) error {
 		return err
 	}
 	if !locked {
-		return msg.Nack(false, true)
+		return w.nack(msg, true)
 	}
 	defer func() {
 		_ = w.store.ReleaseLock(ctx, payload.PaymentID)
@@ -130,14 +148,14 @@ func (w *Worker) handleDelivery(ctx context.Context, msg amqp.Delivery) error {
 			if err := w.store.MarkSent(ctx, payload.PaymentID); err != nil {
 				return err
 			}
-			return msg.Ack(false)
+			return w.ack(msg)
 		}
 
 		if attempt == w.retries {
 			if err := w.store.MarkFailed(ctx, payload.PaymentID); err != nil {
 				return err
 			}
-			return msg.Ack(false)
+			return w.ack(msg)
 		}
 
 		delay := exponentialBackoff(w.baseDelay, w.maxDelay, attempt)
@@ -150,6 +168,18 @@ func (w *Worker) handleDelivery(ctx context.Context, msg amqp.Delivery) error {
 	}
 
 	return nil
+}
+
+func (w *Worker) ack(msg amqp.Delivery) error {
+	w.ackMu.Lock()
+	defer w.ackMu.Unlock()
+	return msg.Ack(false)
+}
+
+func (w *Worker) nack(msg amqp.Delivery, requeue bool) error {
+	w.ackMu.Lock()
+	defer w.ackMu.Unlock()
+	return msg.Nack(false, requeue)
 }
 
 func exponentialBackoff(baseDelay, maxDelay time.Duration, attempt int) time.Duration {
